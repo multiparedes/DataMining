@@ -1,0 +1,255 @@
+---
+title: "Assignment 2 - Regression"
+author: "Marti Pardes Salom"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+## Introduction
+
+In this second assignment of Data mining we will be using the Prestige dataframe that comes with the `car` package, with this data we will try to make regression model where icome will be the dependent variable. First of all we will import the library so we can take a look at what data contains Prestige.
+
+```{r}
+library(car)
+prestige <- Prestige
+summary(prestige)
+```
+
+The Prestige data frame has 102 rows and 6 columns where the observations are occupations, the meaning of the columns are the following:
+
+- education: The average number of years of education for individuals in the occupation.
+- income: The average income of individuals in the occupation.
+- women: The percentage of women in the occupation.
+- prestige: A rating of the prestige of the occupation, as judged by individuals surveyed.
+- census: The percentage of individuals in the occupation who are in the 1950 US Census.
+- type: The type of occupation, classified into one of three categories: professional, bc (blue-collar), or wc (white-collar).
+
+Lets plot all the data and see their correlation
+
+```{r}
+library(ggplot2)
+library(GGally)
+ggpairs(data = prestige)
+```
+As we can see the most correlated variables are prestige with education, and the least correlated are census with prestige, the meaning of the correlation is very obvious, as the logical assumption is that if I study more years I will be more classified for a well-paying job and have more prestige.
+
+From the 6 columns we will focus only in 2: education, that contains the average education of occupational incumbents in years and income, the average income of incumbents in dolas dollars.
+
+We will create a new dataframe with only this two columns to make our work easier
+
+```{r}
+df <- prestige[, c("education", "income")]
+str(df)
+```
+
+We can observ that the education columns is of type Number(double) that makes sense with what we just researched, and the income is of type Int.
+
+The last thing we need to do before doing the data analysis is to check if the columns have any NANs.
+
+```{r}
+columns_with_nan <- colSums(is.na(df))
+columns_with_nan
+```
+
+As we can observe the data don't have any missing values that we need to take care of.
+
+## Data Analysis
+
+Now that we have a ready dataframe we are going to take more indeepth look at the data, how is their distribution, how much are they correlated, there are any otliers? etc
+
+First of all we will draw a histogram for income and a boxplot for education.
+
+```{r}
+par(mfrow = c(1, 2))
+
+hist(df$income, main = "Histogram for Income variable", xlab = "Income (In dolas)", col = "lightblue")
+boxplot(df$education, main = "Boxplot for Eduacation variable", ylab = "Education (In years)", col = "lightblue")
+```
+
+Upon examination, it becomes apparent that the 'income' data exhibits outliers beyond the threshold of 25000. We will address these outliers shortly. In contrast, the 'education' column demonstrates a more balanced distribution, spanning values from 6 to 16, with a well-centered mean.
+
+To deal with the outliers we are going to use the 1st and 3rd quartil to calculate the Interquartile Range (IQR) and then we will calculate all the points above and under 1.5 * IQR.
+
+```{r}
+quantiles = quantile(df$income)
+q1 <- quantiles[2]
+q3 <- quantiles[4]
+
+iqr = q3 - q1
+lower_bound = q1 - 1.5 * iqr
+upper_bound = q3 + 1.5 * iqr
+
+outliers <- df$income[df$income < lower_bound | df$income > upper_bound]
+df[df$income < lower_bound | df$income > upper_bound, ]
+```
+
+As we can observe here we have all the data that fit the criteria given, now we will plot again and mark the outliers with a red color.
+
+```{r}
+plot(df$education, df$income, 
+     xlab="Education", ylab="Income", col=ifelse(df$income < lower_bound | df$income > upper_bound, "red", "black"), pch=16)
+
+legend("topleft", legend=c("Outliers", "Non-Outliers"), col=c("red", "black"), pch=16)
+```
+
+It is evident from our analysis that certain data points deviate significantly from the expected linearity of the data and knowing that we will be doing a linear regression model, that's very afected by outliers we will be removing them from our data.
+
+```{r}
+df <- df[!(df$income < lower_bound | df$income > upper_bound), ]
+```
+
+
+To wrap up the data exploration process, we aim to gain insights into the overall distribution of the dataset. To achieve this, a scatter plot will be generated using the GGally library. A scatter plot is a visual representation that allows us to observe the relationships and patterns between two variables simultaneously. In our case, it will provide a graphical depiction of how the data points are distributed concerning both income and education.
+
+```{r}
+ggpairs(data = df, mapping = aes(color = ""))   
+```
+
+## Regression Models
+
+Now that we have a good feel about the data and we address our possible problems we will make a linear regression , to do this we will us the `lm` function and to measure how good it's we will look at the r-squared, a high R-squared value, approaching 1, signifies a stronger fit of the model to the data, reinforcing the reliability of our predictions.
+
+Furthermore, we'll examine the p-values associated with each coefficient in the regression model. A low p-value, commonly below 0.05, indicates the statistical significance of a predictor variable.
+
+```{r}
+regression <- lm( income ~ education, data=df)
+print(summary(regression))
+```
+Looking at the summary of the regression we can see that our p-value has a value of 1.83e-09, way lower from 0.05, the R-saqured value is 0.3178, not very good but it's a good starting point, lets show the regression line above our scatterplot to see the trend.
+
+```{r}
+plot(df$education, df$income, 
+     main="Scatterplot with Regression Line",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+abline(regression, col="black", lwd=2)
+```
+
+We can clearly see a positive trend where our data seems to follow it quite well. To see if the assumption of the regression holds we need to look at the residuals, the residuals are the differences between the observed values and the values predicted by the regression model, to asure the assumption holds we need to observe if the plot follows this criteria:
+
+- Linearity
+- Constant Variance
+- Independence 
+- Normality
+
+```{r}
+plot(predict(regression), residuals(regression), 
+     main = "Residuals vs. Fitted Values",
+     xlab = "Fitted Values", ylab = "Residuals",
+     col = "#FF5733", pch = 16)
+
+abline(h = 0, col = "blue", lty = 2)
+```
+
+As we can see the data follows all the previous points, making it a valid dataset to apply the regression. Now in order to try to improve the regression we will be doing a polynomial regression model, we will try degree 2 and degree 3 and see how our r-square improves.
+
+```{r}
+poly_model <- lm(income ~ poly(education, 2), data = df)
+summary(poly_model)
+
+plot(df$education, df$income, 
+     main="Scatterplot with Quadratic Regression Line",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+
+x_seq <- seq(min(df$education), max(df$education), length.out = 100)
+y_pred <- predict(poly_model, newdata = data.frame(education = x_seq, education2 = x_seq^2))
+lines(x_seq, y_pred, col="green", lwd=2)
+```
+
+
+```{r}
+cubic_model <- lm(income ~ poly(education, 3), data = df)
+summary(cubic_model)
+
+plot(df$education, df$income, 
+     main="Scatterplot with Cubic Regression Line",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+
+x_seq_3 <- seq(min(df$education), max(df$education), length.out = 100)
+y_pred_3 <- predict(cubic_model, newdata = data.frame(education = x_seq))
+lines(x_seq_3, y_pred_3, col="blue", lwd=2)
+```
+
+```{r}
+plot(df$education, df$income, 
+     main="Scatterplot with Regression Lines",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+abline(regression, col="black", lwd=2)
+lines(x_seq, y_pred, col="green", lwd=2)
+lines(x_seq_3, y_pred_3, col="blue", lwd=2)
+legend("topleft", legend=c("Linear", "Quadratic", "Cubic"),
+       col=c("black", "green", "blue"), lwd=2, pch=16)
+```
+
+As we can clearly observe in the scatter, the bigger the degree the much fitted is the data, in polynomial regression, the degree represents the order of the polynomial, and each increase in degree introduces additional flexibility to the model. As we can imagine the rsquare of the models with degree 3 will be higher, lets print the results: 
+
+```{r}
+cat("Linear ->", summary(regression)$r.squared, "\n")
+cat("Quadratic ->", summary(poly_model)$r.squared, "\n")
+cat("Cubic ->", summary(cubic_model)$r.squared, "\n")
+```
+
+As we tough, the cubic model (degree 3) has a higher R-squared value compared to other models.
+
+## Data transformations
+
+Finally we will doing two transformations to our data to see if we can get better results, first we will apply the logarithmic function and the the square root, finally we will a create a new regression model and see how out r-square value changes.
+
+```{r}
+df$log_income <- log(df$income)
+df$log_education <- log(df$education)
+
+par(mfrow = c(1, 3))
+
+plot(df$education, df$log_income, 
+     xlab="Education", ylab="Log income", col="#FF5733", pch=16)
+
+plot(df$log_education, df$income, 
+     xlab="Log education", ylab="Income", col="#FF5733", pch=16)
+
+plot(df$log_education, df$log_income, 
+     xlab="Log education", ylab="Log income", col="#FF5733", pch=16)
+```
+
+As we can observe the most linear plot is the one that we apply log to both x (education) and y (income), as we previously said we will make a linear regression.
+
+```{r}
+loglog <- lm( log_income ~ log_education, data=df )
+plot(df$log_education, df$log_income, 
+     main="Scatterplot with Regression Lines",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+abline(loglog, col="black", lwd=2)
+
+summary(loglog)
+```
+
+This value and regression line afirms our previous asumption where we thougth that with a more linear distribution the regression will be better, let's see how a square root tranformation looks like with our data.
+
+```{r}
+df$sqr_income <- sqrt(df$income)
+df$sqr_education <- sqrt(df$education)
+
+par(mfrow = c(1, 3))
+
+plot(df$education, df$sqr_income, 
+     xlab="Education", ylab="Squared income", col="#FF5733", pch=16)
+
+plot(df$sqr_education, df$income, 
+     xlab="Squared ducation", ylab="Income", col="#FF5733", pch=16)
+
+plot(df$sqr_education, df$sqr_income, 
+     xlab="Squared education", ylab="Squared income", col="#FF5733", pch=16)
+```
+
+```{r}
+sqrsqr <- lm( sqr_income ~ sqr_education, data=df )
+plot(df$sqr_education, df$sqr_income, 
+     main="Scatterplot with Regression Lines",
+     xlab="Education", ylab="Income", col="#FF5733", pch=16)
+abline(sqrsqr, col="black", lwd=2)
+
+summary(sqrsqr)
+```
+
+As we can see the values are worse, this is because the points are more distant from the regression line compared to the loglog model.

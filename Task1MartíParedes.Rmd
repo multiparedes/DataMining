@@ -1,0 +1,56 @@
+---
+title: "Task1 - Mean, Variation and Covariance"
+author: "Martí Paredes Salom"
+date: '2023-09-16'
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+In this first task of the assignment data mining we need to calculate the mean and variation of a data set, in this case we will be using the RStudio built-in data set `ChickWeight`.
+
+First of all we will have a look at the data set, using the heads command to show the attributes available for each chick.
+
+```{r}
+df <- ChickWeight
+head(df)
+```
+
+In this data set we see that there are **4 columns**: Weight, time, chick and diet, in this first exercise we will center in the **first two columns**.
+
+### Mean and variation
+
+As said, the mean and variation. with the following formula:
+
+$$\overline{x} = \frac{\sum_{i=1}^n x_i}{n}$$ $$s_x^2 = \frac{\sum_{i=1}^n (x_i-\overline{x})^2}{n-1}$$
+
+```{r}
+meanChicksWeigth <- sum(df$weight) / length(df$weight) 
+variationChicksWeigth <- sum((df$weight - meanChicksWeigth)^2)/(length(df$weight) -1)
+```
+
+Done the calculations the **mean of the weight** we obtained a value of **121.82** and a **variation of 5051.22**, now we will do the same with the height.
+
+```{r}
+meanChicksTime <- sum(df$Time) / length(df$Time) 
+variationChicksTime <- sum((df$Time - meanChicksTime)^2)/(length(df$Time) -1)
+```
+
+This time we obtain that the **mean of time is 10.72** and the **variation is 45.68**.
+
+### Covariance
+
+Finally we will calculate the covariance between the weight and time, to do it we will use the following formula:
+
+$$ s_{xy} = \frac{\sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})}{n-1} $$
+
+```{r}
+covWeigthTime <- sum((df$weight - meanChicksWeigth)*(df$Time - meanChicksTime)) / (length(df$weight) - 1)
+```
+
+<!-- We obtained a **covariance of 401.39**, a positive covariance indicates that as the weight of the chicks increases, the 'Time' it takes for them to reach a certain growth stage also tends to increase. In other words, there is a positive linear relationship between 'weight' and 'Time,' suggesting that heavier chicks generally take more time to reach the specified growth stage.  -->

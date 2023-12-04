@@ -1,0 +1,356 @@
+---
+title: "Assignment 3 - Classification"
+author: "Martí Paredes Salom"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+# Introduction
+
+In this third assignment we will be using the data frame `Cirrhosis`, with information of 424 patients of the Mayo clinic that took a controlled trial testing on the drug D-penicillamine, between the 1074 to 1984. Of these, the initial 312 patients took part in the trial and have mostly comprehensive data. The remaining 112 patients didn’t join the clinical trial but agreed to record basic metrics and undergo survival tracking.
+
+Lets take a first look of out data:
+
+```{r}
+df <- read.csv("Cirrhosis.csv")
+head(df)
+```
+
+As we can see this dataframe has a loots of variable, the meaning of all the variables are the following:
+
+- ID: Unique identifier
+- N Days: Number of days between registration and the earlier of death, transplantation, or study analysis time in July 1986
+- Status: Status of the patient (C: censored, CL: censored due to liver tx, or D: death)
+- Drug: Type of drug (D-penicillamine or placebo)
+- Age: Age in [days]
+- Sex: M (male) or F (female)
+- Ascites: Presence of ascites (N: No or Y: Yes)
+- Hepatomegaly: Presence of hepatomegaly (N: No or Y: Yes)
+- Spiders: Presence of spiders (N: No or Y: Yes)
+- Edema: Presence of edema (N: no edema and no diuretic therapy for edema, S: edema present without diuretics, or edema resolved by diuretics, Y: edema despite diuretic therapy)
+- Bilirubin: Serum bilirubin in [mg/dl]
+- Cholesterol: Serum cholesterol in [mg/dl]
+- Albumin: Albumin in [gm/dl]
+- Copper: Urine copper in [ug/day]
+- Alk Phos: Alkaline phosphatase in [U/liter]
+- SGOT: SGOT in [U/ml]
+- Triglycerides: Triglycerides in [mg/dl]
+- Platelets: Platelets per cubic [ml/1000]
+- Prothrombin: Prothrombin time in seconds [s]
+- Stage: Histologic stage of disease (1, 2, 3, or 4)
+
+# Data cleanup and preprocessing
+
+As we can see some variables are categorical, an example of them are Status, Sex, Ascites etc, first of all we will encode de data to numerical input. 
+
+```{r}
+df$Status <- as.numeric(factor(df$Status, levels = c("C", "CL", "D")))
+df$Sex <- ifelse(df$Sex == "F", 0, 1)
+df$Drug <- ifelse(df$Drug == "Placebo", 0, 1)
+
+columns_to_convert <- c("Ascites", "Hepatomegaly", "Spiders")
+for (col in columns_to_convert) {
+  df[[col]] <- ifelse(df[[col]] == 'N', 0, 1)
+}
+
+df$Edema_N <- ifelse(df$Edema == 'N', 1, 0)
+df$Edema_S <- ifelse(df$Edema == 'S', 1, 0)
+df$Edema_Y <- ifelse(df$Edema == 'Y', 1, 0)
+
+df <- df[, !names(df) %in% c("Edema")]
+summary(df)
+```
+
+Now we have all our data correctly transformed into numeric inputs. We achieved this by transforming the fields of 'Yes' or 'No' to 1 and 0, respectively. We transformed the column 'Sex' by encoding 'Female' as 0 and 'Male' as 1. For the 'Drug' column, we encoded it as 0 if they were treated with a placebo and 1 if they were on the drug. To complete the encoding, we observed that the 'Edema' column had three values to encode: 'N' for no edema present, 'Y' for edema present, and 'S' corresponding to edema present without diuretics or edema resolved by diuretics. To avoid conflicts with our other columns, where 0 is 'N' and 1 is 'Y', we performed One-Hot Encoding. We created three new columns, each with a 1 in the column that corresponds to the original value.
+
+The next step is to resolve the possible NaN's that our data can present, in the summary that we just did we can observe that our data have a loot of them, let's take a look column by column and see how can we fix them.
+
+```{r}
+rows_with_na <- df[is.na(df$Drug), ]
+row_names <- rownames(rows_with_na)
+
+for (col in colnames(df)) {
+  df[row_names, col] <- ifelse(is.na(df[row_names, col]), -1, df[row_names, col])
+}
+```
+
+As we can observe here this nans in the drug corresponds to the 106 individuals that didn’t join the clinical trial but agreed to record basic metrics and undergo survival tracking, for this entries we will be adding a new category, -1 to this values, this is done because we can clearly identify this entries without looking at the id.
+
+Lets see how many nans we have left.
+
+```{r}
+columns_with_na_count <- colSums(is.na(df))
+columns_with_na <- columns_with_na_count > 0
+
+columns_with_na_info <- data.frame(
+  ColumnName = names(columns_with_na_count[columns_with_na]),
+  NumNA = columns_with_na_count[columns_with_na]
+)
+
+columns_with_na_info
+```
+
+We will be applyin the mean of the column to the nans, this way we dont loose information on a relatively small dataset, the goal is to fill in the missing values with a representative value based on the available data, helping to maintain as much information as possible.
+
+```{r}
+for (col in colnames(df)) {
+  if (any(is.na(df[, col]))) {
+    col_mean <- mean(df[, col], na.rm = TRUE)
+    df[is.na(df[, col]), col] <- col_mean
+  }
+}
+summary(df)
+```
+
+As we can see our data frame doesn't present any nans anymore, but taking a more close look to the data we can observe some things that we could change, first of all the ID column donsen't give us any information so we will be drooping it, second the  column N_days could be changed to N_years, this way we will have smaller values maintaining the same relation, this will be also apply to the column Age, another thing we are going to transform is change the type of stage from dbl to numeric
+
+```{r}
+df <- df[, !colnames(df) %in% c("ID")]
+
+# We will assume that 1 year = 365 days
+df$N_years <-  round(df$N_Days / 365, 2)  
+df$Age <- floor(df$Age / 365)  
+
+df <- df[, !colnames(df) %in% c("N_Days")]
+df$Stage <- as.integer(df$Stage)
+```
+
+We could continue to adapt our data frame, a way we could do it is to convert the Age to a category such as infant, young, adult, elder, or convert our values of the analysis to low, normal or high. We will try to make some initial models with this data and if the results doesn't convince we will come back here and do this conversions.
+
+# Data exploration
+
+To plot the data we will be using the library GGally, an extension to the ggplot2 module, this allow us to create very nice plots with a simple functions, first of all we will take a general look.
+
+```{r}
+library(ggplot2)
+library(GGally)
+ggcorr(data = df, palette = "RdYlBu", label = TRUE, size = 2, label_size = 2)
+```
+
+```{r}
+ggplot(df, aes(x = as.factor(Stage), fill = as.factor(Stage))) +
+  geom_bar() +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Countplot of Stage", y = "Count") +
+  theme_classic()
+```
+
+As we can see in the plot we have made a mistake when we were cleaning the data when we assign -1 to the data that were on survival tracking, this values that we don't know what their stage is we will be dropping them, as we can see this values are very low and won't impact much on our models.
+
+```{r}
+df <- df[df$Stage != -1, ]
+ggplot(df, aes(x = as.factor(Stage), fill = as.factor(Stage))) +
+  geom_bar() +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Countplot of Stage", y = "Count") +
+  theme_classic()
+```
+
+We can see that our data to predict is not balanced, this means that our models could tend to not learn all the categories equaly, now lets see the distribution of Status.
+
+```{r}
+ggplot(df, aes(x = as.factor(Status), fill = as.factor(Status))) +
+  geom_bar() +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Countplot of Status", y = "Count", x = "Status") +
+  theme_classic()
+```
+
+Let's remember what the values correspond to:
+1) Censored
+2) Censored due to liver tx
+3) Death
+
+AS we can see more people are censored that died, around 62% of the patinents the medication seems to have stoped the symptoms. Finally we will see the number of Males and Females in the study.
+
+```{r}
+ggplot(df, aes(x = as.factor(Sex), fill =  as.factor(Sex))) +
+  geom_bar() +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Countplot of Sex", y = "Count", x = "Sex") +
+  theme_classic()
+```
+
+As we can see the the most people that participated on the study were women, so the Sex category is note balanced.
+
+```{r}
+ggplot(df, aes(x = Age)) +
+  geom_density(fill = "orange", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Age", y = "Density") +
+  theme_minimal()
+```
+
+As we can see the age follows a normal distribution, were the most entries are about 50 years, this makes sense because the cirrhosis is a desease that manifestates at 50 years, consequent of alcohol abuse or diabetes.
+
+To conclude the data exploration we plot data conditioned to another one, first we will be see how the stage is relationated with the status of the patient.
+
+```{r}
+ggplot(df, aes(x = as.factor(Stage), fill = as.factor(Status))) +
+  geom_bar(position = "dodge", stat = "count") +
+  labs(title = "Relationship between Stage and Status", y = "Count") +
+  theme_classic()
+```
+
+As we can clearly see the higher the stage of the cirrhosis the most death this is quite logic but is quite big the jump from censored and deaths from stage 3 to 4, where the abrs almost flips.
+
+```{r}
+ggplot(df, aes(x = as.factor(Status), y = Age, fill = as.factor(Status))) +
+  geom_boxplot() +
+  labs(title = "Relationship between Age and Status", y = "Age", x = "Status") +
+  theme_classic()
+```
+
+In this visualization, we've conditioned the variable 'Age' based on the 'Status' of the patients. Notably, we observe a distinct pattern: the likelihood of 'Death' status appears to increase with age. This insight is particularly evident when considering the mean age, which is visibly higher for patients with 'Death' status compared to those marked as 'Censored.' The elder the patient, the higher the probability of experiencing the outcome categorized as 'Death.' 
+
+This suggests a correlation between age and the risk of mortality, with older individuals exhibiting a heightened likelihood of reaching the 'Death' status compared to their younger counterparts.
+
+# Classification models
+
+Now that we have a good feel about the data we can start doing our classifying models, we will make four different models, first of all we have to split our data in train and test, the train will be used to train the model with our data and the second will be use to make predictions of the models to finally calculate the acurracy of it. 
+
+## Perceptron
+
+The perceptron is a simple type of artificial neuron or basic building block of a neural network. It's used for binary classification tasks, where the goal is to classify input data into one of two categories, to use our data set we will need to modify our status variables, where we combine the 1 and 2 into a single class that means the patient lived, else it died, this will be done inside the functions to avoid changing the data in our future models, as knn and decisions trees don't have this restriction. 
+
+```{r}
+set.seed(43)
+
+ind <- sample(2, nrow(df), replace=TRUE, prob=c(0.80, 0.20))
+
+train_indices <- sample(1:nrow(df), 0.75 * nrow(df))
+train_data <- df[ind==1,]
+test_data <-df[ind==2,]
+```
+
+Now that we have the test and train we will define the perceptron function and train it.
+
+```{r}
+weighted.sum <- function(a, b) {
+  sum(a * b)
+}
+
+binary.step <- function(a, b) {
+  output <- apply(a, 1, weighted.sum, b)
+  return(ifelse(output < 0, 0, 1))
+}
+
+train_perceptron <- function(X, d, learning_rate = 1, max_iter = 1000) {
+  W <- rep(0, ncol(X)) 
+  k <- 0  
+  made_mistake <- TRUE  
+
+  while (made_mistake && k < max_iter) {
+    made_mistake <- FALSE  
+    yk <- binary.step(X, W)
+
+    for (i in 1:nrow(X)) {
+      if (d[i] != yk[i]) { 
+        W <- W + learning_rate * (d[i] - yk[i]) * X[i,]  
+        k <- k + 1
+        made_mistake <- TRUE
+      }
+    }
+  }
+
+  return(list(W = W, updates = k))
+}
+
+
+X_train <- train_data[, !colnames(train_data) %in% c("Status")]
+Y_train <- train_data$Status
+
+
+result <- train_perceptron(X_train, ifelse(train_data$Status == 3, 2, 1))
+```
+
+Once we trained the perceptron with the train_data we will make the prediction with our test data, finally as said we calculate the accuracy.
+
+```{r}
+test_perceptron <- function(W, X_test) {
+  y_pred <- binary.step(X_test, W)
+  return(y_pred)
+}
+
+X_test <- test_data[, !colnames(test_data) %in% c("Status")]
+Y_test <- test_data$Status
+y_pred <- test_perceptron(result$W, X_test)
+accuracy <- sum(y_pred == ifelse(test_data$Status == 3, 2, 1)) / length(test_data$Status) * 100
+
+print(paste("Accuracy:", round(accuracy, 2), "%"))
+```
+
+The results for the perceptron is 58.62%, quite good but given that it's a binary classification it limit us for this data set, as we want to classify in a ternary class.
+
+## K-nearest neighbors
+
+K-nearest neighbors (KNN) is an algorithm employed for data categorization. It relies on evaluating a data point's category by considering its nearest neighbors. The predicted category is determined by the majority category among these neighbors. The parameter K, representing the number of neighbors to check, plays a pivotal role in the algorithm's performance.
+
+After conducting several tests, it was found that setting K to 9 yielded optimal results. This choice avoids overfitting, ensuring the algorithm generalizes well to new data.
+
+```{r}
+library(gmodels)
+library(class)
+
+predictor_cols <- setdiff(colnames(df), "Status")
+
+knn <- knn(train = train_data[, predictor_cols], 
+           test = test_data[, predictor_cols], 
+           cl = train_data$Status, 
+           k = 9)
+
+results <- CrossTable(x = test_data$Status, y = knn, prop.chisq = FALSE)
+accuracy <- sum(results$t[1:2, 1:2]) / sum(results$t)
+print(paste("Knn accuracy:", round(accuracy * 100, 2), "%"))
+```
+
+As we can see we obtained a 63%, very close to the perceptron but as we can observe it only classifies two categories, the censored and the death, leaving the censored due to due to liver tx out.
+
+## Decision tree
+
+A decision tree is a predictive model that maps out possible outcomes and their associated probabilities based on a series of decisions or conditions. It resembles an upside-down tree, where each internal node represents a decision or test on an attribute, each branch represents the outcome of the test, and each leaf node represents the final predicted outcome.
+
+To do the decision tree model we will be using J48 that we saw on class, I tried to plot the tree but it dosen't show the predicted category due to the number of leafs and overlaps the data.
+
+```{r}
+library(RWeka)
+library(party)
+library(partykit)
+library(FSelector)
+model <- J48(as.factor(Status) ~ ., data = train_data)
+model
+```
+
+```{r}
+summary(model)
+predictions <- predict(model, newdata = test_data, type = "class")
+accuracy <- sum(predictions == test_data$Status) / nrow(test_data)
+print(paste("Tree accuracy:", round(accuracy, 2)))
+```
+
+As we can observe this model predicts the test data on 72% correctly, and it also classifies our data with the categoty of censored due to due to liver tx that we didn't get with perceptron or knn, this is a good improvement over the past models.
+
+## Random Forest
+
+Finally we are going to make a random forest, an algorithm that constructs multiple decision trees during training and outputs the mode prediction of the individual trees. The final prediction is a combination of individual tree predictions, providing robust performance and feature importance insights.
+
+```{r}
+library(randomForest)
+
+model <- randomForest(as.factor(Status) ~ ., data = train_data[, c("Status", predictor_cols)], rf_classification = TRUE)
+
+predictions <- predict(model, newdata = test_data)
+acurracy <- sum(predictions == test_data$Status) / nrow(test_data)
+results <- CrossTable(x = test_data$Status, y = predictions, prop.chisq = FALSE)
+print(results$t)
+print(paste("Random Forest Accuracy:", round(acurracy, 2)))
+```
+
+We can observe that this is the best model out of them all with a 80% of accuracy, but we loose the prediction of the class 2, this could be neglected due to only 4 values are in that class.
+
+# Final conclusions
+
+In this third assignment we analyzed the data set of cirrhosis, an external data set that needed some work to cleanup the data, next we observe how the different variables were related and plotted different visualizations to get a better understanding of the data.
+
+Finally we created some models to classify the data, we splited the data 80% for training and 20% for test, we tested a perceptron, k-nearest neighbors, decision trees and random forests, with this models we got the best result to 80% but loosing the option to classify as censored due to liver tx, if we really wanted to get a model that's able to classify as this category we would use a decision tree with a 72% of accuracy. To observe the behavior of this models we calculated the accuracy and created confusion matrixes.
