@@ -1,0 +1,158 @@
+---
+title: "Assignment 4 - Clustering"
+author: "Martí Paredes Salom"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+# Introduction
+
+In this fourth assignment about clustering we are going to use the data set `penguindata` that includes measurements taken for penguins in Palmer Archipelago. Let's load the data and take a look at the variables.
+
+```{r}
+df <- read.csv("penguindata.csv")
+head(df)
+```
+
+As we can see this is a small data frame in therms of variables, we only have 7 and one is the id that we can easily discard, the meaning of the variables is the following:
+
+- bill length mm: A number denoting bill length in millimeters
+- bill depth mm: A number denoting bill depth in millimeters
+- flipper length mm: An integer denoting flipper length in millimeters
+- body mass g: An integer denoting body mass in grams
+- sex: A factor denoting penguin sex, being female or male
+- year: An integer denoting the study year (2007, 2008, or 2009)
+
+# Data cleanup and preprocessing
+
+The first thing we are gonna do is cleaning the data and converting all the variables into data that we can process easily and taking in account the possible Nan's that could be present.
+
+As we commented before the columns of X, that acts as an identifier can be removed from the df as it doesn't give us any relevant information, the next step is to encode the column sex as a binary, where 0 represents a female penguin and 1 a male. The column year we are going to apply a One-Hot Encoding, were we have 3 columns, year_2007, year_2008 and year_2009 and we will mark the observed value with a 1 and the rest with a 0. To finish the transformation on our df we are going to transform the variable body_mass_g into body_mass_kg, this way we are going to have smaller values maintaining the same relation.
+
+```{r}
+df$sex <- ifelse(df$sex == "female", 0, 1)
+
+df$year_2007 <- ifelse(df$year == '2007', 1, 0)
+df$year_2008 <- ifelse(df$year == '2008', 1, 0)
+df$year_2009 <- ifelse(df$year == '2009', 1, 0)
+
+df$body_mass_kg <- df$body_mass_g / 1000
+
+df <- df[, !names(df) %in% c("year", "X", "body_mass_g")]
+```
+
+Now we are going to take a look at the Nan's of our df, as we saw on the first head of the data we can see a row with all null values unless the year of observation, we can list all the rows that's missing atleast half of the values to see if there are more entries like this. 
+
+```{r}
+missing_percentage <- rowMeans(is.na(df)) * 100
+rows_with_high_missing <- which(missing_percentage > 50)
+df[rows_with_high_missing, ]
+```
+
+As we can see we have 2 records of penguins that only have the observation year as a valid column, as this records doesn't give us any useful information we will be removing them from our data.
+
+```{r}
+missing_percentage <- rowMeans(is.na(df)) * 100
+rows_to_keep <- which(missing_percentage <= 50)
+df <- df[rows_to_keep, ]
+
+columns_with_na_count <- colSums(is.na(df))
+columns_with_na <- columns_with_na_count > 0
+
+columns_with_na_info <- data.frame(
+  ColumnName = names(columns_with_na_count[columns_with_na]),
+  NumNA = columns_with_na_count[columns_with_na]
+)
+
+columns_with_na_info
+```
+
+As we can see we have 9 values with Nan on the sex, in this case as this is the only value that's missing we will fill them with the mode of the sex, as the sex being a factor it doesn't have any sense to fill with the mean.
+
+```{r}
+frequency_table <- table(df$sex)
+mode <- as.numeric(names(frequency_table)[frequency_table == max(frequency_table)])
+df$sex[is.na(df$sex)] <- mode
+```
+
+Now that we have our df clean we will take a more in depth look of the data, we will make some plots to see how the data is correlated.
+
+# Data exploration
+
+To plot the data we will be using the library GGally, an extension to the ggplot2 module, this allow us to create very nice plots with a simple functions, first of all we will take a general look.
+
+```{r}
+library(ggplot2)
+library(GGally)
+ggcorr(data = df, palette = "RdYlBu", label = TRUE, size = 3)
+```
+
+```{r}
+ggpairs(df, aes(color = as.factor(sex)))
+```
+
+# Clustering
+
+Clustering is a technique in unsupervised machine learning where the goal is to group similar data points into clusters or groups. The objective is to maximize the similarity within clusters and minimize the similarity between clusters, in this case we want to group the diferent groups of penguins that are hidden in our data.
+
+First of all we need to scale our data, this is important due to the nature of clustering that's based on distances and it's important to leave the categorical data untouched.
+
+```{r}
+numeric_columns <- c("bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_kg")
+
+numeric_data <- df[, numeric_columns]
+categorical_data <- df[, c("sex", "year_2007", "year_2008", "year_2009")]
+
+scaled_numeric_data <- scale(numeric_data)
+
+df_scaled <- cbind(scaled_numeric_data, categorical_data)
+```
+
+```{r}
+pca_result <- prcomp(numeric_data)
+summary(pca_result)
+plot(cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2)), type = "b", 
+     xlab = "Number of Principal Components", ylab = "Cumulative Proportion of Variance Explained")
+
+```
+
+```{r}
+df_f <- cbind(as.data.frame(pca_result$x[,1:2]), categorical_data)
+head(df_f)
+```
+
+
+```{r}
+kmeans_result <- kmeans(df_f, centers = 3, nstart = 20)
+
+df_f$cluster <- as.factor(kmeans_result$cluster)
+
+ggplot(df_f, aes(PC1, PC2, color = cluster)) +
+  geom_point() +
+  labs(title = "K-Means Clustering of Principal Components", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster", shape = "Sex")
+
+```
+
+---
+
+```{r}
+euclidean <- dist(df_f)
+hc <- hclust(euclidean, method = "complete")
+plot(hc,cex = 0.6,hang = -1)
+```
+
+```{r}
+clusters <- 4
+
+plot(hc, cex = 0.6,hang = -1, labels=df$body_mass_kg) 
+rect.hclust(hc, k=clusters)
+groups <- cutree(hc, k=clusters)
+
+plot(pca_result$x[, 1:2], col = groups)
+text(x = pca_result$x[, 1:2], labels=df$body_mass_kg, pos = 3, cex = 0.5, col = groups)
+
+```
+
