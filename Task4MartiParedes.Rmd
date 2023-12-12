@@ -30,15 +30,10 @@ As we can see this is a small data frame in therms of variables, we only have 7 
 
 The first thing we are gonna do is cleaning the data and converting all the variables into data that we can process easily and taking in account the possible Nan's that could be present.
 
-As we commented before the columns of X, that acts as an identifier can be removed from the df as it doesn't give us any relevant information, the next step is to encode the column sex as a binary, where 0 represents a female penguin and 1 a male. The column year we are going to apply a One-Hot Encoding, were we have 3 columns, year_2007, year_2008 and year_2009 and we will mark the observed value with a 1 and the rest with a 0. To finish the transformation on our df we are going to transform the variable body_mass_g into body_mass_kg, this way we are going to have smaller values maintaining the same relation.
+As we commented before the columns of X, that acts as an identifier can be removed from the df as it doesn't give us any relevant information, the next step is to encode the column sex as a binary, where 0 represents a female penguin and 1 a male. The column year we are going to delete it as it has not sense classifing by looking at the year of observation. To finish the transformation on our df we are going to transform the variable body_mass_g into body_mass_kg, this way we are going to have smaller values maintaining the same relation.
 
 ```{r}
 df$sex <- ifelse(df$sex == "female", 0, 1)
-
-df$year_2007 <- ifelse(df$year == '2007', 1, 0)
-df$year_2008 <- ifelse(df$year == '2008', 1, 0)
-df$year_2009 <- ifelse(df$year == '2009', 1, 0)
-
 df$body_mass_kg <- df$body_mass_g / 1000
 
 df <- df[, !names(df) %in% c("year", "X", "body_mass_g")]
@@ -104,11 +99,11 @@ First of all we need to scale our data, this is important due to the nature of c
 numeric_columns <- c("bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_kg")
 
 numeric_data <- df[, numeric_columns]
-categorical_data <- df[, c("sex", "year_2007", "year_2008", "year_2009")]
+sex <- df[, c("sex")]
 
 scaled_numeric_data <- scale(numeric_data)
 
-df_scaled <- cbind(scaled_numeric_data, categorical_data)
+df_scaled <- cbind(scaled_numeric_data, sex)
 ```
 
 ```{r}
@@ -120,7 +115,7 @@ plot(cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2)), type = "b",
 ```
 
 ```{r}
-df_f <- cbind(as.data.frame(pca_result$x[,1:2]), categorical_data)
+df_f <- cbind(as.data.frame(pca_result$x[,1:3]), sex)
 head(df_f)
 ```
 
@@ -150,9 +145,45 @@ clusters <- 4
 plot(hc, cex = 0.6,hang = -1, labels=df$body_mass_kg) 
 rect.hclust(hc, k=clusters)
 groups <- cutree(hc, k=clusters)
-
-plot(pca_result$x[, 1:2], col = groups)
-text(x = pca_result$x[, 1:2], labels=df$body_mass_kg, pos = 3, cex = 0.5, col = groups)
-
 ```
+```{r}
+data_for_clustering <- df_f[, c("PC1", "PC2", "PC3", "sex")]
+
+wss_values <- numeric()
+
+for (k in 1:10) {
+  kmeans_result <- kmeans(data_for_clustering, centers = k)
+  wss_values[k] <- sum(kmeans_result$withinss)
+}
+
+
+plot(1:10, wss_values, type = "b", xlab = "Number of Clusters (k)", ylab = "Within-Cluster-Sum of Squared Errors (WSS)")
+```
+
+```{r}
+library(plotly)
+library(dplyr)
+pca_result <- prcomp(df_scaled)
+df_f <- as.data.frame(pca_result$x[,1:4])
+
+kmeans_result <- kmeans(df_f, centers = 3, nstart = 20)
+
+df$cluster <- as.factor(kmeans_result$cluster)
+
+
+p <- plot_ly(df_f, x=~PC1, y=~PC2, 
+z=~PC3, color=~df$cluster) %>%
+     add_markers(size=1.5)
+p
+```
+
+```{r}
+ggpairs(df, aes(color = cluster))
+```
+
+```{r}
+cluster_means <- aggregate(. ~ cluster, data = df, mean)
+cluster_means
+```
+
 
