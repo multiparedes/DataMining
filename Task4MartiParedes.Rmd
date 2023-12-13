@@ -15,6 +15,7 @@ In this fourth assignment about clustering we are going to use the data set `pen
 ```{r}
 df <- read.csv("penguindata.csv")
 head(df)
+set.seed(1234)
 ```
 
 As we can see this is a small data frame in therms of variables, we only have 7 and one is the id that we can easily discard, the meaning of the variables is the following:
@@ -106,32 +107,100 @@ scaled_numeric_data <- scale(numeric_data)
 df_scaled <- cbind(scaled_numeric_data, sex)
 ```
 
+Once that we have all the numeric data scaled and added the categorical data we are going to apply PCA, primary component analysis, a unsupervised algorithm that aims to reduce the dimensionality of our data. This is done creating new variables as linear combinations of the original features, the first principal component explains the most variance in the data, and each subsequent component explains as much of the remaining variance as possible.
+
 ```{r}
 pca_result <- prcomp(numeric_data)
 summary(pca_result)
 plot(cumsum(pca_result$sdev^2 / sum(pca_result$sdev^2)), type = "b", 
      xlab = "Number of Principal Components", ylab = "Cumulative Proportion of Variance Explained")
-
 ```
+
+As we can see with two PC we could have a 98% of the data explained, but knowing that we have a rather small dataframe we will be taking three principal components, reducing in one the number of components of the original data frame.
+
+The PCA can only be applied to numerical data so we have to append the column sex to this reduced data frame.
 
 ```{r}
 df_f <- cbind(as.data.frame(pca_result$x[,1:3]), sex)
 head(df_f)
 ```
 
+## K-Means
+
+The first unsupervised clustering tecnique that we are going to try is KMeans, this algorithm partitions a dataset into K clusters, where each data point belongs to the cluster with the nearest mean. The values of the function are:
+- centers: Number of cluster that we are going to assign.
+- nstart: Number of times the K-Means algorithm will be run with different initial cluster centers.
+
+We will create a first model with 3 clusters and we are going to plot the results 
 
 ```{r}
 kmeans_result <- kmeans(df_f, centers = 3, nstart = 20)
-
 df_f$cluster <- as.factor(kmeans_result$cluster)
 
 ggplot(df_f, aes(PC1, PC2, color = cluster)) +
   geom_point() +
   labs(title = "K-Means Clustering of Principal Components", x = "Principal Component 1", y = "Principal Component 2", color = "Cluster", shape = "Sex")
+```
+As we can see the results are dificult to interpret, how good is this clustering, what's the optimal number of clustering needed, what are features of each cluster? Let's go one by one and try to answer each of this questions.
+To determine the optimal number of clusters, we'll utilize the Within-Cluster Sum of Squares (WSS) method. WSS gauges the sum of squared distances between each data point and its cluster's centroid, indicating cluster compactness. By plotting these values, we'll observe an "elbow" point, where the reduction in WSS slows down, transitioning from a steep curve to a gentler slope. This elbow point signifies an optimal cluster count, striking a balance between compact clusters and avoiding excessive fragmentation or oversimplification.
 
+```{r}
+
+wss_values <- numeric()
+
+for (k in 1:10) {
+  kmeans_result <- kmeans(df_f, centers = k)
+  wss_values[k] <- sum(kmeans_result$withinss)
+}
+
+
+plot(1:10, wss_values, type = "b", xlab = "Number of Clusters (k)", ylab = "Within-Cluster-Sum of Squared Errors (WSS)")
 ```
 
----
+As we can observe on the upper grafic the number of optimal cluster is three or four, so let's repeat the kmeans model with their respective number of clusters. To represent the clusters we are going to use plotly to represent the data in 3D where the axes will be the different primary components.
+
+```{r}
+library(plotly)
+
+kmeans_result_3 <- kmeans(df_f, centers = 3, nstart = 20)
+df$cluster_3 <- as.factor(kmeans_result_3$cluster)
+
+p <- plot_ly(df_f, x=~PC1, y=~PC2, 
+z=~PC3, color=~df$cluster_3, size=1.5) 
+p
+```
+
+As we can observe we have two big clouds of points with a space between them so it makes sense that if we have three groups individuals are not mixed in the two clouds. Let's take a look at the means of the different groups.
+
+```{r}
+cluster_means_k3 <- aggregate(. ~ cluster_3, data = df, mean)
+cluster_means_k3
+```
+
+Observing the dataset, it's apparent that the gender distribution across groups is fairly balanced. However, disparities emerge when considering other variables, indicating varying ranges in sizes. Notably, there is a discernible pattern where larger flippers and bills correlate with increased body mass. This suggests potential classifications: Cluster 3 might represent adult penguins, Cluster 1 could denote younger individuals, and Cluster 2 possibly includes smaller specimens. Alternatively, these distinctions may indicate different species within the penguin population. 
+
+Now let's repeat this process with four clusters and observe how the data reacts to this new cluster. 
+
+```{r}
+kmeans_result_4 <- kmeans(df_f, centers = 4, nstart = 20)
+
+df$cluster_4 <- as.factor(kmeans_result_4$cluster)
+
+p <- plot_ly(df_f, x=~PC1, y=~PC2, 
+z=~PC3, color=~df$cluster_4, size=1.5) 
+p
+```
+
+As we expected with four clusters it created a new group in the left side cluster that was one big group instead of keeping clustering the second one, this respects the idea of maximize the similarity within clusters and minimize the similarity between clusters, let's see the means and try to find any pattern in the data.
+
+```{r}
+cluster_means_k4 <- aggregate(. ~ cluster_4, data = df, mean)
+cluster_means_k4
+```
+
+In contrast with our previous data now we have a cluster that is mostly males, this corresponds to the bigger means of all groups, this could make us believe that this is the class of big males penguins. We could also say that we follow to have groups based on the means representing different sizes of penguins, but now the sex is more important than before.
+
+## Hierarcical clustering
 
 ```{r}
 euclidean <- dist(df_f)
@@ -146,44 +215,4 @@ plot(hc, cex = 0.6,hang = -1, labels=df$body_mass_kg)
 rect.hclust(hc, k=clusters)
 groups <- cutree(hc, k=clusters)
 ```
-```{r}
-data_for_clustering <- df_f[, c("PC1", "PC2", "PC3", "sex")]
-
-wss_values <- numeric()
-
-for (k in 1:10) {
-  kmeans_result <- kmeans(data_for_clustering, centers = k)
-  wss_values[k] <- sum(kmeans_result$withinss)
-}
-
-
-plot(1:10, wss_values, type = "b", xlab = "Number of Clusters (k)", ylab = "Within-Cluster-Sum of Squared Errors (WSS)")
-```
-
-```{r}
-library(plotly)
-library(dplyr)
-pca_result <- prcomp(df_scaled)
-df_f <- as.data.frame(pca_result$x[,1:4])
-
-kmeans_result <- kmeans(df_f, centers = 3, nstart = 20)
-
-df$cluster <- as.factor(kmeans_result$cluster)
-
-
-p <- plot_ly(df_f, x=~PC1, y=~PC2, 
-z=~PC3, color=~df$cluster) %>%
-     add_markers(size=1.5)
-p
-```
-
-```{r}
-ggpairs(df, aes(color = cluster))
-```
-
-```{r}
-cluster_means <- aggregate(. ~ cluster, data = df, mean)
-cluster_means
-```
-
 
